@@ -1,7 +1,6 @@
 from micropython import const
 import CrowPanel as eink
 from uqr import QRCode
-from main import find_quote_on_card
 
 
 # Screen configuration
@@ -11,6 +10,21 @@ HEIGHT = const(272)
 # Initialize display
 display = eink.Screen_579()
 fb = display
+
+def find_quote_on_card(time_str:str) -> tuple[str, str, str, str]:
+    ''' Search the quotes database on the mounted TF card for one
+    matching the current system time.
+    '''
+    try:
+        with open("/sd/quotes.db", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith(time_str):
+                    parts = line.strip().split("|")
+                    if len(parts) == 5:
+                        return parts[1], parts[2], parts[3], parts[4] # target phrase, quote, book, author
+    except Exception:
+        pass
+    return "", "Time flies like an arrow.", "Unknown Author", f"({time_str})"
 
 def draw_custom_text(text, target_phrase, start_x, start_y, max_width, line_height=20) -> None:
     ''' Break a string into safe chunks to fit the wide 792-pixel 

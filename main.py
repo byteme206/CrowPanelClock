@@ -6,7 +6,9 @@ import machine
 import socket
 import json
 from machine import RTC, SPI, Pin, SDCard
+
 import urequests
+
 import main_display_module as display_engine # Custom module layout wrapper
 
 
@@ -228,21 +230,6 @@ Content-Type: text/html
     conn.send(html)
     conn.close()
 
-def find_quote_on_card(time_str:str) -> tuple[str, str, str, str]:
-    ''' Search the quotes database on the mounted TF card for one
-    matching the current system time.
-    '''
-    try:
-        with open("/sd/quotes.db", "r", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith(time_str):
-                    parts = line.strip().split("|")
-                    if len(parts) == 5:
-                        return parts[1], parts[2], parts[3], parts[4] # target phrase, quote, book, author
-    except Exception:
-        pass
-    return "", "Time flies like an arrow.", "Unknown Author", f"({time_str})"
-
 def fetch_weather(lat=47.6062, lon=-122.3321) -> tuple[str, str]:
     """
     Fetch live weather conditions via Open-Meteo API.
@@ -271,7 +258,9 @@ def fetch_weather(lat=47.6062, lon=-122.3321) -> tuple[str, str]:
         return "N/A", "Offline"
 
 
-# Initialization
+# --- Initialization ---
+WIDTH = 792
+HEIGHT = 272
 CONFIG_FILE = "/sd/config.json"
 mount_tf_card()
 config = load_config()
@@ -337,7 +326,7 @@ while True:
         display_engine.fb.text("SCAN TO CONFIG", 615, 40, 0x0000)
         
         # Generate QR targeting the local server URL at position X=615, Y=80
-        draw_qr_code(display_engine.fb, text_payload=portal_url, start_x=615, start_y=80, pixel_scale=4)
+        display_engine.draw_qr_code(display_engine.fb, text_payload=portal_url, start_x=615, start_y=80, pixel_scale=4)
         
         # Push composite array data blocks to Elecrow hardware and execute refresh
         display_engine.display.load_buffer()
