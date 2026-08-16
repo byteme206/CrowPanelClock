@@ -75,7 +75,7 @@ def init_network_manager(ssid: str, password:str):
     portal_ip = ap.ifconfig()[0] # Default is usually 192.168.4.1 
     return False, portal_ip
 
-def lookup_zip_code(zip_str):
+def lookup_zip_code(zip_str:str):
     """
     Scans the local dictionary on the TF card to match a 5-digit ZIP.
     zip_str: str, Five-digit zip code.
@@ -94,14 +94,17 @@ def lookup_zip_code(zip_str):
     return None
 
 def start_web_server() -> socket:
-    # Setup background web server socket
+    ''' Initialize the socket listener on port 80.
+    '''
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(('', 80))
     s.listen(2)
     s.setblocking(False) # Non-blocking so it doesn't freeze the clock loop
     return s
 
-def check_web_server(server_socket, is_connected_to_home_wifi):
+def check_web_server(server_socket, is_connected_to_home_wifi) -> None:
+    ''' Check for user interactions via REST calls.
+    '''
     try:
         conn, addr = server_socket.accept()
         request = conn.recv(1024).decode('utf-8')
@@ -133,8 +136,6 @@ def check_web_server(server_socket, is_connected_to_home_wifi):
             body = request.split("\r\n\r\n")[-1]
             params = dict(u.split("=") for u in body.split("&"))
             zip_input = params.get("zip", "")
-            
-            from main_display_module import lookup_zip_code # Helper script import
             result = lookup_zip_code(zip_input)
             
             if result:
@@ -152,7 +153,9 @@ def check_web_server(server_socket, is_connected_to_home_wifi):
     except OSError:
         pass
 
-def serve_dashboard(conn, alert_html, is_connected):
+def serve_dashboard(conn, alert_html, is_connected) -> None:
+    ''' Serve the clock configuration user interface web dashboard.
+    '''
     config = load_config()
     status_badge = '<span style="color:#22c55e;">● Connected to Home Wi-Fi</span>' if is_connected else '<span style="color:#eab308;">▲ Portal Configuration Mode</span>'
     
@@ -191,8 +194,8 @@ Content-Type: text/html
         <!-- ZIP Code Quick Search Tool -->
         <form action="/search-zip" method="POST">
             <label for="zip">Quick Setup by US ZIP Code</label>
-            <input type="text" id="zip" name="zip" placeholder="e.g. 90210" required>
-            <input type="submit" value="Search & Apply ZIP">
+            <input type="text" id="zip" name="zip" placeholder="e.g. 98101" required>
+            <input type="submit" value="Search & Apply by ZIP">
         </form>
 
         <!-- Main Settings Configuration Form -->
