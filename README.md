@@ -1,4 +1,4 @@
-# LitClock Project ESP32
+# CrowPanel Clock
 ## Overview
 This is adapted from examples of other literary clock projects, generally for Raspberry Pi Zero 2W. However, this project is designed to run on an AIO ESP32-S3 wide e-ink display from Elecrow.
 
@@ -31,6 +31,7 @@ Once an hour, the clock face will flash momentarily as the clock performs a full
 |`CrowPanel.py`|Custom driver for the CrowPanel_579 display that leverages the dual frame buffer chips.|https://github.com/omiq/crowpanel/blob/main/CrowPanel.py|
 
 |TF Card File|What it Does|
+|---|---|
 |`config.json`|Holds the wifi and weather settings for the device.|
 |`quotes.db`|Holds the database of literary quotes.|
 |`zips.csv`|Holds the zip code to lat/long mappings for the weather function.|
