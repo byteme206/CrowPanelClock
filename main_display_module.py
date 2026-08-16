@@ -1,6 +1,7 @@
 from micropython import const
 import CrowPanel as eink
 from uqr import QRCode
+from main import find_quote_on_card
 
 
 # Screen configuration

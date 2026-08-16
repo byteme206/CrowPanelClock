@@ -238,7 +238,7 @@ def find_quote_on_card(time_str):
             for line in f:
                 if line.startswith(time_str):
                     parts = line.strip().split("|")
-                    if len(parts) == 4:
+                    if len(parts) == 5:
                         return parts[1], parts[2], parts[3], parts[4] # target phrase, quote, book, author
     except Exception:
         pass

@@ -2,6 +2,8 @@
 ## Overview
 This is adapted from examples of other literary clock projects, generally for Raspberry Pi Zero 2W. However, this project is designed to run on an AIO ESP32-S3 wide e-ink display from Elecrow.
 
+https://www.elecrow.com/crowpanel-esp32-5-79-e-paper-hmi-display-with-272-792-resolution-black-white-color-driven-by-spi-interface.html?srsltid=AfmBOorAEavovHgv6RwpOEVgmnrw2qmFxBe2H_AeXZhIT7Rl1VH7epkI
+
 Data persistence relies on built-in TFcard support and a FAT32 formatted data partition that holds the location-specific data and wifi credentials, as well as quotations and zip codes database.
 
 ## How the Clock Functions
