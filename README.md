@@ -20,7 +20,11 @@ Once an hour, the clock face will flash momentarily as the clock performs a full
 4. Flash the ESP32-S3 with micropython driver firmware: 
 5. Using Thonny, install the `urequests` micropython package to your environment.
 6. After the ESP32-S3 reboots, it should appear as an external storage device. Copy `main_display_module.py`, `uqr.py`, `CrowPanel.py`, and `main.py` to the external device, then eject it.
-6. Unplug the cable from the computer, and plug the clock into a 5v USB-C power adapter. The device should boot within 15 seconds. Follow directions on the screen to connect to the device for first time setup.
+7. Insert the TFcard into the card slot on the back of the CrowPanel.
+8. Unplug the cable from the computer, and plug the clock into a 5v USB-C power adapter. The device should boot within 15 seconds. Follow directions on the screen to connect to the device for first-time setup.
+9. Enter your postal code and click "Search and Apply." The system should look up your postal code and fill in the name of your city and the latitude and longitude, which are used to obtain local weather.
+10. Enter your WiFi network credentials.
+11. Click "Save Settings and Reboot Clock."
 
 ## Project layout
 |Code File|What it Does|Source|
