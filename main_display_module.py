@@ -1,4 +1,4 @@
-from micropyton import const
+from micropython import const
 import CrowPanel as eink
 from uqr import QRCode
 
