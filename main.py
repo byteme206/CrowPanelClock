@@ -228,10 +228,9 @@ Content-Type: text/html
     conn.send(html)
     conn.close()
 
-def find_quote_on_card(time_str):
+def find_quote_on_card(time_str:str) -> tuple[str, str, str, str]:
     ''' Search the quotes database on the mounted TF card for one
     matching the current system time.
-    time_str: str, String representation of the current time.
     '''
     try:
         with open("/sd/quotes.db", "r", encoding="utf-8") as f:
@@ -242,7 +241,7 @@ def find_quote_on_card(time_str):
                         return parts[1], parts[2], parts[3], parts[4] # target phrase, quote, book, author
     except Exception:
         pass
-    return "", "Time flies like an arrow.", "Unknown Author", f"{time_str}"
+    return "", "Time flies like an arrow.", "Unknown Author", f"({time_str})"
 
 def fetch_weather(lat=47.6062, lon=-122.3321) -> tuple[str, str]:
     """
