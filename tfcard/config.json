@@ -1,0 +1,7 @@
+{
+    "ssid": "Your_Home_WiFi",
+    "password": "Your_WiFi_Password",
+    "lat": "47.6062", 
+    "lon": "-122.3321", 
+    "city": "Seattle"
+}
