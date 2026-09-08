@@ -1,0 +1,19 @@
+{
+    "python.languageServer": "Pylance",
+    "python.analysis.autoSearchPath": true,
+    "python.analysis.extraPaths": [
+        "~/.local/share/pip",
+        "./.venv/Lib/site-packages",
+        "../stubs",
+        "~/.micropico-stubs/included"
+    ],
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingModuleSource": "none"
+    },
+    "python.terminal.activateEnvironment": false,
+    "micropico.openOnStart": true,
+    "python.analysis.typeshedPaths": [
+        "~/.micropico-stubs/included"
+    ]
+}

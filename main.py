@@ -2,35 +2,26 @@ import os
 import network
 import time
 import ntptime
-import machine
 import socket
 import json
-from machine import RTC, SPI, Pin, SDCard
-
+from machine import RTC, reset
 import urequests
 
-import main_display_module as display_engine # Custom module layout wrapper
+import lib.main_display_module as display_engine # Custom module layout wrapper
 
-
-def mount_tf_card() -> None:
-    ''' Mount the TF card as a readable volume.
-    '''
-    try:
-        sd = SDCard(slot=2, sck=Pin(12), mosi=Pin(11), miso=Pin(13), cs=Pin(10))
-        os.mount(sd, "/sd")
-    except Exception as e:
-        print("TF Card Mount Failed:", e)
 
 def load_config() -> dict:
-    ''' Load the configuration details from TFCard.'''
+    ''' Load the configuration details from flash.'''
     try:
         with open(CONFIG_FILE, "r") as f:
+            print("Loaded config file.")
             return json.load(f)
-    except:
+    except Exception as e:
+        print("Error loading config file, using defaults:", e)
         return {"ssid": "", "password": "", "lat": "47.6062", "lon": "-122.3321", "city": "Seattle"} # System default
 
 def save_config(lat, lon, city, ssid=None, password=None) -> None:
-    ''' Saves config data to TFCard.'''
+    ''' Saves config data to flash.'''
     config = load_config()
     config["lat"] = lat
     config["lon"] = lon
@@ -42,6 +33,7 @@ def save_config(lat, lon, city, ssid=None, password=None) -> None:
         
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f)
+        print("Saved configuration file.")
 
 def init_network_manager(ssid: str, password:str):
     ''' Initializes the WiFi radio in station mode but switches to
@@ -75,6 +67,7 @@ def init_network_manager(ssid: str, password:str):
     # Configure local hot-spot parameters (Open network for quick configuration access)
     ap.config(essid="Literary-Clock-Setup", authmode=network.AUTH_OPEN)
     portal_ip = ap.ifconfig()[0] # Default is usually 192.168.4.1 
+    print(f"Starting portal on {portal_ip}.")
     return False, portal_ip
 
 def lookup_zip_code(zip_str:str):
@@ -85,7 +78,7 @@ def lookup_zip_code(zip_str:str):
     """
     clean_zip = zip_str.strip()
     try:
-        with open("/sd/zips.csv", "r", encoding="utf-8") as f:
+        with open(ZIPS_FILE, "r", encoding="utf-8") as f:
             for line in f:
                 if line.startswith(clean_zip):
                     parts = line.strip().split(",")
@@ -95,13 +88,14 @@ def lookup_zip_code(zip_str:str):
         print("ZIP file read error:", e)
     return None
 
-def start_web_server() -> socket:
+def start_web_server():
     ''' Initialize the socket listener on port 80.
     '''
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(('', 80))
     s.listen(2)
     s.setblocking(False) # Non-blocking so it doesn't freeze the clock loop
+    print("Listening on Port 80.")
     return s
 
 def check_web_server(server_socket, is_connected_to_home_wifi) -> None:
@@ -131,7 +125,7 @@ def check_web_server(server_socket, is_connected_to_home_wifi) -> None:
                       '<h3>Credentials Saved! Rebooting clock to connect to your network...</h3></body></html>')
             conn.close()
             time.sleep(2)
-            machine.reset()
+            reset()
             
         # --- Handle ZIP Lookup Submission ---
         elif "POST /search-zip" in request:
@@ -152,7 +146,8 @@ def check_web_server(server_socket, is_connected_to_home_wifi) -> None:
         elif "GET / " in request or "GET /HTTP" in request:
             serve_dashboard(conn, "", is_connected_to_home_wifi)
             
-    except OSError:
+    except OSError as e:
+        print("OS error:", e)
         pass
 
 def serve_dashboard(conn, alert_html, is_connected) -> None:
@@ -262,9 +257,14 @@ def fetch_weather(lat=47.6062, lon=-122.3321) -> tuple[str, str]:
 WIDTH = 792
 HEIGHT = 272
 CONFIG_FILE = "/sd/config.json"
-mount_tf_card()
+ZIPS_FILE = "/sd/zips.csv"
+
 config = load_config()
-is_home_wifi, network_ip = init_network_manager(ssid=config["ssid"], password=config["password"])
+
+is_home_wifi, network_ip = init_network_manager(
+    ssid=config["ssid"], 
+    password=config["password"]
+    )
 
 # Setup server socket binding
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -272,7 +272,7 @@ s.bind(('', 80))
 s.listen(2)
 s.setblocking(False)
 
-rtc = machine.RTC()
+rtc = RTC()
 temp, condition = "N/A", "Offline"
 weather_timer = 15
 minute_counter = 0
@@ -329,8 +329,7 @@ while True:
         display_engine.draw_qr_code(display_engine.fb, text_payload=portal_url, start_x=615, start_y=80, pixel_scale=4)
         
         # Push composite array data blocks to Elecrow hardware and execute refresh
-        display_engine.display.load_buffer()
-        display_engine.display.full_refresh()
+        display_engine.portal_mode()
         
         # Continuous server listening socket trap
         while True:

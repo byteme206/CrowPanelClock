@@ -6,6 +6,7 @@ from uqr import QRCode
 # Screen configuration
 WIDTH = const(792)
 HEIGHT = const(272)
+QUOTES_FILE = "/sd/quotes.db"
 
 # Initialize display
 display = eink.Screen_579()
@@ -16,7 +17,7 @@ def find_quote_on_card(time_str:str) -> tuple[str, str, str, str]:
     matching the current system time.
     '''
     try:
-        with open("/sd/quotes.db", "r", encoding="utf-8") as f:
+        with open(QUOTES_FILE, "r", encoding="utf-8") as f:
             for line in f:
                 if line.startswith(time_str):
                     parts = line.strip().split("|")
@@ -154,3 +155,7 @@ def update_split_display(time_str, temp_str, condition_str, city_name, force_ful
         display.show(mode=0) # Full refresh, causes screen flash
     else:
         display.show(mode=2) # Partial refresh, fast and no flashing
+
+def portal_mode() -> None:
+    ''' Do a full screen update for portal mode.'''
+    display.show(mode=0)
