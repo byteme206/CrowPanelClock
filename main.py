@@ -232,7 +232,7 @@ def fetch_weather(lat=47.6062, lon=-122.3321) -> tuple[str, str]:
     lat: float, latitude.
     lon: float, longitude.
     """
-    url = f"http://open-meteo.com{lat}&longitude={lon}&current_weather=true&temperature_unit=fahrenheit"
+    url = f"http://open-meteo.com?latitude={lat}&longitude={lon}&current_weather=true&temperature_unit=fahrenheit"
     try:
         response = urequests.get(url, timeout=10)
         data = response.json()
@@ -267,10 +267,7 @@ is_home_wifi, network_ip = init_network_manager(
     )
 
 # Setup server socket binding
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.bind(('', 80))
-s.listen(2)
-s.setblocking(False)
+s = start_web_server()
 
 rtc = RTC()
 temp, condition = "N/A", "Offline"
@@ -280,9 +277,11 @@ minute_counter = 0
 while True:
     if is_home_wifi:
         # --- STANDARD OPERATION MODE ---
-        now = rtc.datetime()
-        time_str = f"{now:02d}:{now:02d}"
-        
+        now = rtc.datetime() # Returns a tuple: (year, month, day, weekday, hour, minute, second, subseconds)
+        hour = now[4]
+        minute = now[5]
+        time_str = f"{hour:02d}:{minute:02d}"
+
         if weather_timer >= 15:
             temp, condition = fetch_weather(lat=config["lat"], lon=config["lon"])
             weather_timer = 0
