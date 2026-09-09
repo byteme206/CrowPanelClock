@@ -10,6 +10,12 @@ import urequests
 import lib.main_display_module as display_engine # Custom module layout wrapper
 
 
+WIDTH = 792
+HEIGHT = 272
+CONFIG_FILE = "/sd/config.json"
+ZIPS_FILE = "/sd/zips.csv"
+
+
 def load_config() -> dict:
     ''' Load the configuration details from flash.'''
     try:
@@ -254,11 +260,6 @@ def fetch_weather(lat=47.6062, lon=-122.3321) -> tuple[str, str]:
 
 
 # --- Initialization ---
-WIDTH = 792
-HEIGHT = 272
-CONFIG_FILE = "/sd/config.json"
-ZIPS_FILE = "/sd/zips.csv"
-
 config = load_config()
 
 is_home_wifi, network_ip = init_network_manager(
@@ -304,25 +305,25 @@ while True:
         portal_url = f"http://{network_ip}"
         
         # Wipe canvas structure clean to uniform white surface
-        display_engine.fb.fill(0xFFFF)
+        display_engine.fb.fill(1)
         
         # ----------------------------------------------------
         # LEFT CANVAS PANEL: Step-by-Step Directions
         # ----------------------------------------------------
-        display_engine.fb.text("[ PORTAL SETUP ACTIVE ]", 30, 40, 0x0000)
-        display_engine.fb.text("1. Connect your phone to Wi-Fi network:", 30, 80, 0x0000)
-        display_engine.fb.text("   -> SSID: Literary-Clock-Setup", 30, 105, 0x0000)
-        display_engine.fb.text("2. Scan the QR code or open browser URL:", 30, 145, 0x0000)
-        display_engine.fb.text(f"   -> URL: {portal_url}", 30, 170, 0x0000)
-        display_engine.fb.text("3. Complete the form to reboot the clock.", 30, 210, 0x0000)
+        display_engine.fb.text("[ PORTAL SETUP ACTIVE ]", 30, 40, 0)
+        display_engine.fb.text("1. Connect your phone to Wi-Fi network:", 30, 80, 0)
+        display_engine.fb.text("   -> SSID: Literary-Clock-Setup", 30, 105, 0)
+        display_engine.fb.text("2. Scan the QR code or open browser URL:", 30, 145, 0)
+        display_engine.fb.text(f"   -> URL: {portal_url}", 30, 170, 0)
+        display_engine.fb.text("3. Complete the form to reboot the clock.", 30, 210, 0)
         
         # Draw a clean vertical dividing separation line
-        display_engine.fb.vline(580, 0, HEIGHT, 0x0000)
+        display_engine.fb.vline(580, 0, HEIGHT, 0)
         
         # ----------------------------------------------------
         # RIGHT CANVAS PANEL: Scannable QR Component
         # ----------------------------------------------------
-        display_engine.fb.text("SCAN TO CONFIG", 615, 40, 0x0000)
+        display_engine.fb.text("SCAN TO CONFIG", 615, 40, 0)
         
         # Generate QR targeting the local server URL at position X=615, Y=80
         display_engine.draw_qr_code(display_engine.fb, text_payload=portal_url, start_x=615, start_y=80, pixel_scale=4)
