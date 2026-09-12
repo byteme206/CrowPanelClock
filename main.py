@@ -24,14 +24,16 @@ def load_config() -> dict:
             return json.load(f)
     except Exception as e:
         print("Error loading config file, using defaults:", e)
-        return {"ssid": "", "password": "", "lat": "47.6062", "lon": "-122.3321", "city": "Seattle"} # System default
+        return {"ssid": "", "password": "", "lat": "47.6062", "lon": "-122.3321", "city": "Seattle", "offset": "-8", "dst": True} # System default
 
-def save_config(lat, lon, city, ssid=None, password=None) -> None:
+def save_config(lat, lon, city, offset, dst, ssid=None, password=None) -> None:
     ''' Saves config data to flash.'''
     config = load_config()
     config["lat"] = lat
     config["lon"] = lon
     config["city"] = city
+    config["offset"] = offset
+    config["dst"] = dst
     if ssid is not None:
         config["ssid"] = ssid
     if password is not None:
@@ -88,8 +90,8 @@ def lookup_zip_code(zip_str:str):
             for line in f:
                 if line.startswith(clean_zip):
                     parts = line.strip().split(",")
-                    if len(parts) == 4:
-                        return parts[1], parts[2], parts[3]
+                    if len(parts) == 6:
+                        return parts[1], parts[2], parts[3], parts[4], parts[5] # lat, lon, city, offset, dst
     except Exception as e:
         print("ZIP file read error:", e)
     return None
@@ -122,8 +124,10 @@ def check_web_server(server_socket, is_connected_to_home_wifi) -> None:
             city = params.get("city", "").replace("+", " ")
             lat = params.get("lat", "")
             lon = params.get("lon", "")
+            offset = params.get("offset", "0")
+            dst = params.get("dst", False)
             
-            save_config(lat, lon, city, ssid, password)
+            save_config(lat, lon, city, ssid, password, offset, dst)
             
             # Serve success message and force hardware reboot
             conn.send('HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n')
@@ -141,8 +145,8 @@ def check_web_server(server_socket, is_connected_to_home_wifi) -> None:
             result = lookup_zip_code(zip_input)
             
             if result:
-                lat, lon, city = result
-                save_config(lat, lon, city)
+                lat, lon, city, offset, dst = result
+                save_config(lat, lon, city, offset, dst)
                 msg = f'<div class="alert success">ZIP Found! Saved: {city} ({lat}, {lon})</div>'
             else:
                 msg = '<div class="alert error">ZIP Code not found.</div>'
@@ -258,6 +262,29 @@ def fetch_weather(lat=47.6062, lon=-122.3321) -> tuple[str, str]:
         print("Weather update failed:", e)
         return "N/A", "Offline"
 
+def is_leap_year(year) -> bool:
+    '''Returns True if the given year is a leap year, otherwise False.'''
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)() 
+
+def days_in_month(year, month) -> int:
+    '''Returns the number of days in a given month, accounting for leap years.'''
+    if month == 2:
+        return 29 if is_leap_year(year) else 28
+    elif month in [4, 6, 9, 11]:
+        return 30
+    else:
+        return 31
+
+def get_time_string(offset=0, dst_observed=False) -> str:
+    ''' Returns the current time as a formatted string with DST and timezone offset.'''
+    rtc = RTC()
+    now = rtc.datetime() # (year, month, day, weekday, hour, minute, second, subseconds)
+    year, month, day, _, hour, minute, second, _ = now
+    if dst_observed:
+        offset += 1
+    local_hour = (hour + offset) % 24
+    return f"{local_hour:02d}:{minute:02d}"
+
 
 # --- Initialization ---
 config = load_config()
@@ -271,6 +298,7 @@ is_home_wifi, network_ip = init_network_manager(
 s = start_web_server()
 
 rtc = RTC()
+offset = int(config.get("offset", 0))
 temp, condition = "N/A", "Offline"
 weather_timer = 15
 minute_counter = 0
@@ -279,7 +307,7 @@ while True:
     if is_home_wifi:
         # --- STANDARD OPERATION MODE ---
         now = rtc.datetime() # Returns a tuple: (year, month, day, weekday, hour, minute, second, subseconds)
-        hour = now[4]
+        hour = now[4] + offset  # Apply timezone offset
         minute = now[5]
         time_str = f"{hour:02d}:{minute:02d}"
 
@@ -294,7 +322,7 @@ while True:
 
         display_engine.update_split_display(time_str, temp, condition, config["city"], should_refresh_fully)
         
-        # Sleep for a minute while checking the background web server for alterations
+        # Sleep for a minute while checking the background web server for interactions
         for _ in range(600):
             check_web_server(s, is_home_wifi)
             time.sleep_ms(100)
