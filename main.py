@@ -227,7 +227,7 @@ Content-Type: text/html
 
                 <label for="offset">Timezone Offset (e.g., -8 for PST)</label>
                 <input type="text" id="offset" name="offset" value="{config['offset']}" required>
-                
+
                 <label for="dst">Daylight Saving Time Observed</label>
                 <input type="checkbox" id="dst" name="dst" {"checked" if config.get("dst", False) else ""}>
                 
@@ -360,7 +360,7 @@ while True:
         display_engine.fb.text("SCAN TO CONFIG", 615, 40, 0)
         
         # Generate QR targeting the local server URL at position X=615, Y=80
-        display_engine.draw_qr_code(display_engine.fb, text_payload=portal_url, start_x=615, start_y=80, pixel_scale=4)
+        display_engine.draw_qr_code(display_engine.fb, text_payload=portal_url, start_x=615, start_y=80, pixel_scale=6)
         
         # Push composite array data blocks to Elecrow hardware and execute refresh
         display_engine.portal_mode()
