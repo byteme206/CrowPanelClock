@@ -224,6 +224,12 @@ Content-Type: text/html
                 
                 <label for="lon">Longitude</label>
                 <input type="text" id="lon" name="lon" value="{config['lon']}" required>
+
+                <label for="offset">Timezone Offset (e.g., -8 for PST)</label>
+                <input type="text" id="offset" name="offset" value="{config['offset']}" required>
+                
+                <label for="dst">Daylight Saving Time Observed</label>
+                <input type="checkbox" id="dst" name="dst" {"checked" if config.get("dst", False) else ""}>
                 
                 <input type="submit" value="Save Settings & Reboot Clock">
             </form>
