@@ -1,7 +1,9 @@
+import gc
 from micropython import const
 import CrowPanel as eink
-from uqr import QRCode
-
+from uQR import QRCode
+from writer import Writer
+import garamond as myfont
 
 # Screen configuration
 WIDTH = const(792)
@@ -11,7 +13,34 @@ QUOTES_FILE = "/sd/quotes.db"
 # Initialize display
 display = eink.Screen_579()
 fb = display
+font_writer = Writer(fb, myfont, verbose=False)
 
+def draw_qr_code(fb, text_payload, start_x, start_y, pixel_scale=4):
+    """
+    Generates a compliant QR code and scales each matrix item onto the e-paper framebuffer.
+    """
+    gc.collect()  
+    qr = QRCode(version=2, error_correction=1, border=0)
+    qr.add_data(text_payload)
+    
+    matrix = qr.get_matrix() 
+    size = len(matrix)
+    qr_side = size * pixel_scale
+    
+    # Render a clean white protective quiet zone border (1 = White)
+    fb.fill_rect(start_x - 8, start_y - 8, qr_side + 16, qr_side + 16, 1)
+    
+    # Loop through the grid array
+    for row in range(size):
+        for col in range(size):
+            if matrix[row][col]:
+                fb.fill_rect(
+                    start_x + (col * pixel_scale), 
+                    start_y + (row * pixel_scale), 
+                    pixel_scale, 
+                    pixel_scale, 
+                    0 # 0 = Black on CrowPanel
+                )
 
 def find_quote_on_card(time_str:str) -> tuple[str, str, str, str]:
     ''' Search the quotes database on the mounted TF card for one
@@ -23,140 +52,99 @@ def find_quote_on_card(time_str:str) -> tuple[str, str, str, str]:
                 if line.startswith(time_str):
                     parts = line.strip().split("|")
                     if len(parts) == 5:
-                        return parts[1], parts[2], parts[3], parts[4] # target phrase, quote, book, author
+                        return parts[1], parts[2], parts[3], parts[4]
     except Exception:
         pass
     return "", "Time flies like an arrow.", "Unknown Author", f"({time_str})"
 
-def draw_custom_text(text, target_phrase, start_x, start_y, max_width, line_height=20) -> None:
-    ''' Break a string into safe chunks to fit the wide 792-pixel 
-    screen width, and apply a bold effect by double-rendering 
-    target words into the frame buffer.
-    text: str, The literary quote to render.
-    target_phrase: str, The substring of text we want emphasized.
-    start_x: int, Cursor starting position X axis.
-    start_y: int, Cursor starting position Y axis.
-    max_width: int, Screen position at which to word wrap.
-    line_height: int, Line height in pixels.
+def draw_custom_text(text, target_phrase, start_x, start_y, max_width, font_writer) -> None:
+    ''' Break a string into safe chunks to fit the wide 792-pixel screen width, 
+    leveraging the Writer framework's native proportional width detection.
     '''
-    # Splits, wraps, and bolds specific text inline
     words = text.split(" ")
     cursor_x = start_x
     cursor_y = start_y
-    
-    # Clean the target phrase for uniform comparison
     target_lower = target_phrase.lower().strip()
+    line_height = font_writer.font.height() + 6
 
     for word in words:
-        # Check if the word is part of our target time phrase
         clean_word = word.lower().strip(".,;:!?\"'")
         is_bold = clean_word in target_lower and clean_word != ""
         
-        # Calculate pixel width estimation (Native font is roughly 8 pixels wide per char)
-        word_width = len(word) * 8 + 8 
+        # Leverage Peter Hinch's writer stringlen system minus current cursor math
+        # to calculate true pixel dimension metrics dynamically
+        word_width = font_writer.stringlen(word) - font_writer._getstate().text_col
         
-        # Wrap to next line if text hits the display boundary
         if cursor_x + word_width > start_x + max_width:
             cursor_x = start_x
             cursor_y += line_height
 
         if is_bold:
-            # Render standard text
-            fb.text(word, cursor_x, cursor_y, 0)
-            # Render offset layers to generate a simulated Bold thickness
-            fb.text(word, cursor_x + 1, cursor_y, 0)
-            fb.text(word, cursor_x, cursor_y + 1, 0)
+            font_writer.set_textpos(fb, cursor_y, cursor_x)
+            font_writer.printstring(word)
+            # Simulated Bold offset layers
+            font_writer.set_textpos(fb, cursor_y + 1, cursor_x)
+            font_writer.printstring(word)
+            font_writer.set_textpos(fb, cursor_y, cursor_x + 1)
+            font_writer.printstring(word)
         else:
-            fb.text(word, cursor_x, cursor_y, 0)
+            font_writer.set_textpos(fb, cursor_y, cursor_x)
+            font_writer.printstring(word)
 
-        # Advance horizontal printing cursor
-        cursor_x += word_width
+        cursor_x += (word_width + 6) # Add padding space between layout words
 
 def draw_weather_icon(condition, x, y) -> None:
-    """Draw minimalist vector shapes based on weather text.
-    condition: str, Current weather condition.
-    x: int, x position to draw icon.
-    y: int, y position to draw icon.
-    """
     condition = condition.lower()
-    
     if "clear" in condition:
-        # Sun: Center circle with simple cross beams
         fb.ellipse(x + 20, y + 20, 10, 10, 0, False)
-        fb.line(x + 20, y, x + 20, y + 6, 0)      # Top ray
-        fb.line(x + 20, y + 34, x + 20, y + 40, 0) # Bottom ray
-        fb.line(x, y + 20, x + 6, y + 20, 0)      # Left ray
-        fb.line(x + 34, y + 20, x + 40, y + 20, 0) # Right ray
-        
+        fb.line(x + 20, y, x + 20, y + 6, 0)      
+        fb.line(x + 20, y + 34, x + 20, y + 40, 0) 
+        fb.line(x, y + 20, x + 20, y + 20, 0)      
+        fb.line(x + 34, y + 20, x + 40, y + 20, 0) 
     elif "cloudy" in condition or "overcast" in condition:
-        # Cloud: Overlapping rectangles and lines forming a silhouette
-        fb.fill_rect(x + 5, y + 18, 30, 12, 0)    # Base
-        fb.fill_rect(x + 12, y + 8, 16, 16, 0)    # Main puff
-        fb.fill_rect(x + 22, y + 12, 10, 10, 0)   # Side puff
-        
+        fb.fill_rect(x + 5, y + 18, 30, 12, 0)    
+        fb.fill_rect(x + 12, y + 8, 16, 16, 0)    
+        fb.fill_rect(x + 22, y + 12, 10, 10, 0)   
     elif "rain" in condition or "drizzle" in condition:
-        # Rain: A cloud base with diagonal slash drops
-        fb.fill_rect(x + 8, y + 8, 24, 10, 0)     # Cloud top
-        fb.line(x + 10, y + 24, x + 6, y + 32, 0) # Raindrop 1
-        fb.line(x + 20, y + 24, x + 16, y + 32, 0)# Raindrop 2
-        fb.line(x + 30, y + 24, x + 26, y + 32, 0)# Raindrop 3
-        
+        fb.fill_rect(x + 8, y + 8, 24, 10, 0)     
+        fb.line(x + 10, y + 24, x + 6, y + 32, 0) 
+        fb.line(x + 20, y + 24, x + 16, y + 32, 0)
+        fb.line(x + 30, y + 24, x + 26, y + 32, 0)
     else:
-        # Default/Unknown: A clean minimalist box border
         fb.rect(x + 5, y + 5, 30, 30, 0)
-
-def draw_qr_code(fb, text_payload, start_x, start_y, pixel_scale=4):
-    """
-    Generates a QR code and scales each matrix item onto the e-paper framebuffer.
-    With pixel_scale=4, a Version 2 QR code is roughly 100x100 pixels.
-    """
-    qr = QRCode(version=2)
-    matrix = qr.generate(text_payload)
-    size = len(matrix)
-    
-    # Render a clean white protective boundary padding box around the QR area
-    fb.fill_rect(start_x - 8, start_y - 8, (size * pixel_scale) + 16, (size * pixel_scale) + 16, 1)
-    
-    # Loop through the grid array and render black structural items
-    for row in range(size):
-        for col in range(size):
-            if matrix[row][col]:
-                fb.fill_rect(
-                    start_x + (col * pixel_scale), 
-                    start_y + (row * pixel_scale), 
-                    pixel_scale, 
-                    pixel_scale, 
-                    0
-                )
 
 def update_split_display(time_str, temp_str, condition_str, city_name, force_full_refresh) -> None:
     target_phrase, quote, book, author = find_quote_on_card(time_str)
     fb.fill(1) 
     
-    # --- WEATHER SIDEBAR (0 to 192 px) ---
-    fb.text(time_str, 20, 20, 0)
-    fb.text(city_name[:15], 20, 50, 0)
+    # --- WEATHER SIDEBAR ---
+    font_writer.set_textpos(fb, 20, 15)
+    font_writer.printstring(time_str)
     
-    # Draw weather indicator badge 
+    font_writer.set_textpos(fb, 50, 15)
+    font_writer.printstring(city_name[:15])
+    
     draw_weather_icon(condition_str, x=20, y=80)
     
-    fb.text(f"Temp: {temp_str}", 20, 140, 0)
-    fb.text(condition_str[:18], 20, 160, 0)
+    font_writer.set_textpos(fb, 140, 20)
+    font_writer.printstring(f"Temp: {temp_str}")
+    
+    font_writer.set_textpos(fb, 160, 20)
+    font_writer.printstring(f"Cond: {condition_str[:18]}")
     
     fb.vline(192, 0, HEIGHT, 0)
     
-    # --- QUOTE CANVAS (192 to 792 px) ---
-    draw_custom_text(quote, target_phrase, start_x=212, start_y=40, max_width=560, line_height=24)
+    # --- QUOTE CANVAS ---
+    draw_custom_text(quote, target_phrase, start_x=212, start_y=30, max_width=560, font_writer=font_writer)
     
     footer_text = f"--- {book} ({author})"
-    fb.text(footer_text, WIDTH - (len(footer_text) * 8) - 20, HEIGHT - 40, 0)
+    target_row = HEIGHT - 40
+    # Safe fallback positioning logic
+    target_col = WIDTH - 350
+    font_writer.set_textpos(fb, target_row, target_col)
+    font_writer.printstring(footer_text)
     
-    # --- SMART REFRESH ROUTING ---
     if force_full_refresh:
-        display.show(mode=0) # Full refresh, causes screen flash
+        display.show(mode=0) # SCREEN_UPDATE_FULL
     else:
-        display.show(mode=2) # Partial refresh, fast and no flashing
-
-def portal_mode() -> None:
-    ''' Do a full screen update for portal mode.'''
-    display.show(mode=0)
+        display.show(mode=1) # SCREEN_UPDATE_FAST (Mode 1 gives optimized fast diffing updates)
