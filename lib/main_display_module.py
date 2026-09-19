@@ -11,7 +11,6 @@ import roboto as robotofont
 # Screen configuration
 WIDTH = const(792)
 HEIGHT = const(272)
-QUOTES_FILE = "/sd/quotes.db"
 
 # Initialize display
 display = eink.Screen_579()
@@ -47,21 +46,6 @@ def draw_qr_code(fb, text_payload, start_x, start_y, pixel_scale=4):
                     pixel_scale, 
                     0 # 0 = Black on CrowPanel
                 )
-
-def find_quote_on_card(time_str:str) -> tuple[str, str, str, str]:
-    ''' Search the quotes database on the mounted TF card for one
-    matching the current system time.
-    '''
-    try:
-        with open(QUOTES_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith(time_str):
-                    parts = line.strip().split("|")
-                    if len(parts) == 5:
-                        return parts[1], parts[2], parts[3], parts[4]
-    except Exception:
-        pass
-    return "", "Time flies like an arrow.", "Unknown Author", f"({time_str})"
 
 def render_quote_native(quote: str, target_phrase: str, start_x: int, start_y: int, max_x: int) -> None:
     ''' Render quote using Writer's word-by-word line wrapping. '''
@@ -166,15 +150,29 @@ def draw_weather_icon(condition: str, x: int, y: int, size: int) -> None:
     else:  # "cloudy", "overcast", fallback
         draw_cloud(x + 50 * s, y + 48 * s, 65 * s)
 
+def show_boot_splash(image_path="/sd/boot_logo.bin", width=792, height=272):
+    """Loads and displays a raw 1-bit MONO_HLSB binary image on boot."""
+    try:
+        fb.fill(1)  # Clear screen to white (1 = White)
+        display.LoadImage(PosX=0, PosY=0, ImgName=image_path, ImgWidth=width, ImgHeight=height)
+        display.show(mode=0)  # SCREEN_UPDATE_FULL for clean initialization
+        print("Boot splash image displayed successfully.")
+    except Exception as e:
+        print("Failed to display boot splash image:", e)
+
 def update_split_display(
         time_str, 
         date_str,
+        quote_details,
         temp, 
         condition, 
         city, 
         full_refresh=False
         ) -> None:
-    target_phrase, quote, book, author = find_quote_on_card(time_str)
+    target_phrase = quote_details["target_phrase"]
+    quote = quote_details["quote"]
+    book = quote_details["book"]
+    author = quote_details["author"]
     fb.fill(1) 
     
     # --- WEATHER SIDEBAR ---
