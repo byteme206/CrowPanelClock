@@ -4,41 +4,34 @@ This is adapted from examples of other literary clock projects, generally for Ra
 
 https://www.elecrow.com/crowpanel-esp32-5-79-e-paper-hmi-display-with-272-792-resolution-black-white-color-driven-by-spi-interface.html?srsltid=AfmBOorAEavovHgv6RwpOEVgmnrw2qmFxBe2H_AeXZhIT7Rl1VH7epkI
 
-Data persistence relies on built-in TFcard support and a FAT32 formatted data partition that holds the location-specific data and wifi credentials, as well as quotations and zip codes database.
+Data persistence relies on built-in storage (4GB Flash) but you can also insert a microSD card and it will mount to and supplant that mount point. Mounted at /sd is a FAT32 formatted data partition that holds the quotations and zip codes database as well as the system configuration settings.
 
 ## How the Clock Functions
-On first boot, the clock will boot up into Captive Portal mode, and it will display instructions on the screen for joining its temporary network to complete configuration. Once joined from your phone or tablet, you will open the camera app and scan the QR code on the clock face. This will open the device to the simple setup form.
+On first boot, the clock will be in Captive Portal mode, and it will display instructions on the screen for joining its temporary network to complete configuration. Once joined from your phone or tablet, you will open the camera app and scan the QR code on the clock face. This will open the device to the simple setup form.
 
-From the setup form, you will enter details about your wifi network, which the clock needs to update its time automatically. You will also choose your ZIP code to enable local weather display. Weather is updated every 15 minutes from Open-Meteo.
+On the setup form, enter your 5-digit US postal code and click the Search button. The system will pull in details about your location that it needs to serve up local time and weather. Please enter a valid SSID and network password. CrowPanel clock uses this this connection to sync its time via NTP and to obtain current weather details. Click the Save button at the bottom, and the clock will reboot.
 
-For every minute of the day, the clock checks its massive database of literary quotes, randomly chooses one that matches the present minute, and updates the clock face to display that quote in which that time appears, with the time emphasized within it.
+For every minute of the day, the clock checks its massive database of literary quotes, randomly chooses one that matches the present minute, and updates the clock face to display that quote in which that time appears, with the time emphasized within it. Note that for some times of day, there is just no open source quote, and the clock will fall back to the previous minutes in order until it locates a quote. In some cases, there are multiple possibilities for a specific tine of day (looking at you, midnight!). In these cases, the clock randomly chooses one.
 
 Once an hour, the clock face will flash momentarily as the clock performs a full screen refresh to clear any e-ink ghosting.
 
 ## Installation
-1. Insert a TFcard into your computer, and copy the contents of the tfcard folder to the root of that drive.
-2. Eject the TFcard and set it aside.
-3. Connect the Elecrow panel to your computer with a USB-C power and data cable.
-4. Flash the ESP32-S3 with micropython driver firmware: 
-5. Using Thonny, install the `urequests` micropython package to your environment.
-6. After the ESP32-S3 reboots, it should appear as an external storage device. Copy `main_display_module.py`, `uqr.py`, `CrowPanel.py`, and `main.py` to the external device, then eject it.
-7. Insert the TFcard into the card slot on the back of the CrowPanel.
-8. Unplug the cable from the computer, and plug the clock into a 5v USB-C power adapter. The device should boot within 15 seconds. Follow directions on the screen to connect to the device for first-time setup.
-9. Enter your postal code and click "Search and Apply." The system should look up your postal code and fill in the name of your city and the latitude and longitude, which are used to obtain local weather.
-10. Enter your WiFi network credentials.
-11. Click "Save Settings and Reboot Clock."
+1. Check out this repository to your local system.
+2. Connect the Elecrow panel to your computer with a USB-C power and data cable.
+3. Flash the ESP32-S3 with micropython driver firmware: 
+5. After the ESP32-S3 reboots, it should appear as an external storage device.
+6. Using Thonny, install the `urequests` micropython package to your environment.
+7. Copy the folders `sd` and `lib`, and the file `main.py` to the root of the external device, then eject it.
+8. Unplug the cable from the computer, and plug the clock into a 5v USB-C power adapter. The device should boot within a few seconds. Follow the directions on the screen to connect to the device for first-time setup.
+14. Enter your postal code and click "Search and Apply." The system should look up your postal code and fill in the name of your city and the latitude and longitude, which are used to obtain local weather.
+15. Enter your WiFi network credentials.
+16. Click "Save Settings and Reboot Clock."
 
-## Project layout
-|Code File|What it Does|Source|
-|---|---|---|
-|`main.py`|Contains the core logic for the program.|Me|
-|`main_display_module.py`|Contains functions for drawing elements into the dual frame buffers and a custom refresh function that writes the frame buffer to the e-ink panel.|Me|
-|`uqr.py`|Helper class for generating a QR code from a URL.|Me|
-|`CrowPanel.py`|Custom driver for the CrowPanel_579 display that leverages the dual frame buffer chips.|https://github.com/omiq/crowpanel/blob/main/CrowPanel.py|
-
+## Project details
 |SD Card File|What it Does|
 |---|---|
-|`config.json`|Holds the wifi and location settings for the device.|
+|`boot_splash.bin`|Boot splash image.|
+|`config.json`|Holds the wifi and location settings for the device after first time setup.|
 |`quotes.db`|Holds the database of literary quotes.|
 |`zips.csv`|Holds the postal code to lat/long mappings for the weather and DST functions. The example provided is a limited subset of postal codes to save on storage space. Modify as needed for your use case.|
 
