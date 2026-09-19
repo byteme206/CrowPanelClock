@@ -440,7 +440,7 @@ class Screen_579(SSD1683):
         ValueError
             If the frame buffer size does not match the screen resolution.
         '''
-        if len(self.buffer) != self.EPD_WIDTH * self.EPD_HEIGHT / 8:
+        if len(self.buffer) != self.EPD_WIDTH * self.EPD_HEIGHT // 8:
             raise ValueError("Invalid frame buffer size. Expected {} bytes.".format(
                 self.EPD_WIDTH * self.EPD_HEIGHT // 8))
 

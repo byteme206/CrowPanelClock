@@ -46,10 +46,22 @@ def init_network_manager(ssid: str, password:str):
         for _ in range(15):
             if wlan.isconnected():
                 print("Connected! IP address:", wlan.ifconfig()[0])
-                try:
-                    ntptime.settime() 
-                except:
-                    pass
+                rtc_synced = False
+                for attempt in range(3):
+                    try:
+                        print(f"Attempting to sync RTC with NTP (Attempt {attempt + 1}/3)...")
+                        ntptime.settime()
+                        print("RTC successfully set to UTC:", RTC().datetime())
+                        rtc_synced = True
+                        break
+                    except Exception as e:
+                        print(f"Failed to sync RTC with NTP (Attempt {attempt + 1}/3)...")
+                        print(f"e")
+                        time.sleep(1)
+
+                if not rtc_synced:
+                    print("Failed to sync RTC with NTP after 3 attempts.")
+
                 return True, wlan.ifconfig()[0]
             time.sleep(1)
             
@@ -61,15 +73,45 @@ def init_network_manager(ssid: str, password:str):
     print(f"Starting portal on {portal_ip}.")
     return False, portal_ip
 
-def lookup_zip_code(zip_str:str):
+def unquote(string):
+    """
+    Decodes URL percent-encoded characters and converts '+' to spaces.
+    Example: 'P%40ss%2Bw%20rd%21' -> 'P@ss+w rd!'
+    """
+    # Convert form space '+' back to actual space
+    string = string.replace('+', ' ')
+    
+    parts = string.split('%')
+    if len(parts) == 1:
+        return string
+    
+    result = bytearray(parts[0].encode('utf-8'))
+    for part in parts[1:]:
+        if len(part) >= 2:
+            try:
+                # Convert the two hex digits following '%' to a byte integer
+                code = int(part[:2], 16)
+                result.append(code)
+                result.extend(part[2:].encode('utf-8'))
+            except ValueError:
+                # Fallback if invalid hex digits
+                result.append(ord('%'))
+                result.extend(part.encode('utf-8'))
+        else:
+            result.append(ord('%'))
+            result.extend(part.encode('utf-8'))
+            
+    return result.decode('utf-8')
+
+def lookup_zip_code(zip_str: str):
     clean_zip = zip_str.strip()
     try:
         with open(ZIPS_FILE, "r", encoding="utf-8") as f:
             for line in f:
-                if line.startswith(clean_zip):
-                    parts = line.strip().split(",")
-                    if len(parts) == 6:
-                        return parts[1], parts[2], parts[3], parts[4], parts[5]
+                parts = [p.strip() for p in line.strip().split(",")]
+                if len(parts) >= 5 and parts[0] == clean_zip:
+                    dst = parts[5] if len(parts) >= 6 else "True"
+                    return parts[1], parts[2], parts[3], parts[4], dst
     except Exception as e:
         print("ZIP file read error:", e)
     return None
@@ -82,51 +124,93 @@ def start_web_server():
     print("Listening on Port 80.")
     return s
 
+def parse_form_data(body) -> dict:
+    """Parses x-www-form-urlencoded data into a dictionary with unquoted values."""
+    # Example Usage in HTTP handler:
+    # request_body = "ssid=Home%20WiFi&password=P%40ss%23word%21"
+    # data = parse_form_data(request_body)
+    params = {}
+    pairs = body.split('&')
+    for pair in pairs:
+        if '=' in pair:
+            key, val = pair.split('=', 1)
+            params[unquote(key)] = unquote(val)
+    return params
+
 def check_web_server(server_socket, is_connected_to_home_wifi) -> None:
+    conn = None
     try:
         conn, addr = server_socket.accept()
-        request = conn.recv(1024).decode('utf-8')
-        
-        if "POST /save-all" in request:
-            body = request.split("\r\n\r\n")[-1]
-            params = dict(u.split("=") for u in body.split("&"))
-            ssid = params.get("ssid", "").replace("+", " ")
-            password = params.get("password", "").replace("+", " ")
-            city = params.get("city", "").replace("+", " ")
-            lat = params.get("lat", "")
-            lon = params.get("lon", "")
-            offset = params.get("offset", "0")
-            dst = params.get("dst", False)
-            
-            save_config(lat, lon, city, offset, dst, ssid, password)
-            
-            conn.send('HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n')
-            conn.send('<html><body style="background:#0f172a;color:#f8fafc;font-family:sans-serif;text-align:center;padding-top:50px;">'
-                      '<h3>Credentials Saved! Rebooting clock...</h3></body></html>')
-            conn.close()
-            time.sleep(2)
-            reset()
-            
-        elif "POST /search-zip" in request:
-            body = request.split("\r\n\r\n")[-1]
-            params = dict(u.split("=") for u in body.split("&"))
+    except OSError as e:
+        # EAGAIN / EWOULDBLOCK (Errno 11 or 110) means no incoming connection ready; skip quietly
+        if e.args[0] in (11, 110, 35):
+            return
+        print("Accept error:", e)
+        return
+
+    try:
+        conn.settimeout(1.0)
+        request = b""
+        # Read until header terminator is found
+        while b"\r\n\r\n" not in request and len(request) < 2048:
+            chunk = conn.recv(512)
+            if not chunk:
+                break
+            request += chunk
+
+        req_str = request.decode('utf-8', 'ignore')
+
+        body = ""
+        if "\r\n\r\n" in req_str:
+            body = req_str.split("\r\n\r\n", 1)[1]
+
+        if "POST /search-zip" in req_str:
+            params = parse_form_data(body)
             zip_input = params.get("zip", "")
             result = lookup_zip_code(zip_input)
-            
+
             if result:
                 lat, lon, city, offset, dst = result
-                save_config(lat=lat, lon=lon, city=city, offset=offset, dst=dst)
+                curr = load_config()
+                save_config(lat=lat, lon=lon, city=city, offset=offset, dst=dst, 
+                            ssid=curr.get("ssid"), password=curr.get("password"))
                 msg = f'<div class="alert success">ZIP Found! Saved: {city}</div>'
             else:
                 msg = '<div class="alert error">ZIP Code not found.</div>'
-            
+
             serve_dashboard(conn, msg, is_connected_to_home_wifi)
-            
-        elif "GET / " in request or "GET /HTTP" in request:
+
+        elif "POST /save-all" in req_str:
+            params = parse_form_data(body)
+            dst_setting = "dst" in params or str(params.get("dst", "")).lower() in ("true", "1", "yes", "on")
+            save_config(
+                lat=params.get("lat", ""),
+                lon=params.get("lon", ""),
+                city=params.get("city", ""),
+                offset=params.get("offset", "0"),
+                dst=dst_setting,
+                ssid=params.get("ssid", ""),
+                password=params.get("password", "")
+            )
+
+            conn.sendall(b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n')
+            conn.sendall(b'<html><body style="background:#0f172a;color:#f8fafc;font-family:sans-serif;text-align:center;padding-top:50px;">'
+                         b'<h3>Credentials Saved! Rebooting clock...</h3></body></html>')
+            conn.close()
+            time.sleep(2)
+            reset()
+
+        else:
             serve_dashboard(conn, "", is_connected_to_home_wifi)
-            
-    except OSError:
-        pass
+
+    except Exception as e:
+        print("Web server handling error:", e)
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 def serve_dashboard(conn, alert_html, is_connected) -> None:
     config = load_config()
@@ -166,6 +250,7 @@ Content-Type: text/html
                 <input type="text" id="lat" name="lat" value="{config['lat']}" required>
                 <input type="text" id="lon" name="lon" value="{config['lon']}" required>
                 <input type="text" id="offset" name="offset" value="{config['offset']}" required>
+                <label style="color:#fff;"><input type="checkbox" name="dst" value="True" {'checked' if config.get('dst') else ''}> Daylight Saving Time Observed</label><br><br>
                 <input type="submit" value="Save Settings & Reboot">
             </form>
         </div>
@@ -177,27 +262,78 @@ Content-Type: text/html
     conn.close()
 
 def fetch_weather(lat=47.6062, lon=-122.3321) -> tuple[str, str]:
-    url = f"http://open-meteo.com{lat}&longitude={lon}&current_weather=true&temperature_unit=fahrenheit"
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&timezone=auto&current=weather_code,temperature_2m&temperature_unit=fahrenheit"
+    gc.collect()
     try:
-        gc.collect()
         response = urequests.get(url, timeout=10)
         data = response.json()
         response.close()
-        current = data.get("current_weather", {})
-        temp = int(round(current.get("temperature", 0)))
+        current = data.get("current", {})
+        temp = int(round(current.get("temperature_2m", 0)))
         code = current.get("weather_code", 0)
-        weather_map = {0: "Clear", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast", 45: "Foggy", 61: "Light Rain"}
+        weather_map = {
+            0: "Clear", 
+            1: "Mainly Clear", 
+            2: "Partly Cloudy", 
+            3: "Overcast",
+            45: "Foggy", 
+            48: "Foggy",
+            51: "Light Drizzle", 
+            53: "Drizzle", 
+            55: "Dense Drizzle",
+            61: "Light Rain", 
+            63: "Moderate Rain", 
+            65: "Heavy Rain",
+            71: "Slight Snow", 
+            73: "Moderate Snow", 
+            75: "Heavy Snow",
+            80: "Rain Showers", 
+            81: "Rain Showers", 
+            82: "Heavy Showers",
+            95: "Thunderstorm", 
+            96: "Thunderstorm", 
+            99: "Thunderstorm"
+        }
+        print(f"Temp: {temp} F")
+        print(f"Code: {code}")
+        print(f"Condition: {weather_map.get(code, 'Cloudy')}")
         return f"{temp} F", weather_map.get(code, "Cloudy")
     except Exception:
         return "N/A", "Offline"
 
+def is_dst(year, month, day, hour) -> bool:
+    """ Accurate US DST Check: 2nd Sunday in March (2 AM) to 1st Sunday in Nov (2 AM) """
+    if month < 3 or month > 11:
+        return False
+    if month > 3 and month < 11:
+        return True
+    
+    # Calculate day of week using Zeller's / Sakamoto's algorithm
+    # Returns 0 for Sunday, 1 for Monday, ..., 6 for Saturday
+    t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4]
+    y = year - (1 if month < 3 else 0)
+    dow = (y + y // 4 - y // 100 + y // 400 + t[month - 1] + day) % 7
+    
+    # Day of the month for the most recent Sunday
+    sunday = day - dow
+    
+    if month == 3:
+        # DST starts 2nd Sunday in March at 2:00 AM (Day 8-14)
+        return sunday >= 8 and (day > sunday or hour >= 2)
+    
+    if month == 11:
+        # DST ends 1st Sunday in Nov at 2:00 AM (Day 1-7)
+        return sunday < 1 or (day == sunday and hour < 1)
+    
+    return False
+
+
 # --- Initialization ---
 config = load_config()
+rtc = RTC()
 is_home_wifi, network_ip = init_network_manager(config["ssid"], config["password"])
 s = start_web_server()
-
-rtc = RTC()
-offset = int(config.get("offset", 0))
+offset = int(float(config.get("offset", 0)))
 temp, condition = "N/A", "Offline"
 weather_timer = 15
 minute_counter = 60
@@ -205,15 +341,33 @@ portal_rendered = False
 
 while True:
     if is_home_wifi:
-        now = rtc.datetime()
-        hour = now[4]
-        minute = now[5]
+        try:
+            utc_offset = int(float(config.get("offset", -8))) # Default to PST
+        except ValueError:
+            utc_offset = -8  # Default to PST
+
+        dst_config = config.get("dst", True)
+        if isinstance(dst_config, str):
+            dst_config = dst_config.lower() in ("true", "1", "yes")
+
+        # Convert RTC UTC time to UTC epoch
+        utc_epoch = time.time()
         
-        # Proper rolling mathematical modulo tracking handles daylight adjustments safely
-        if config.get("dst", False) and (3 <= now[1] <= 10):
-            hour += 1
-        local_hour = (hour + offset) % 24
-        time_str = f"{local_hour:02d}:{minute:02d}"
+        # Approximate standard local time to evaluate DST rule in local context
+        standard_local_epoch = utc_epoch + (utc_offset * 3600)
+        st_time = time.localtime(standard_local_epoch)
+        st_year, st_month, st_day, st_hour = st_time[0], st_time[1], st_time[2], st_time[3]
+
+        # Calculate DST shift based on local standard time
+        dst_adj = 1 if (dst_config and is_dst(st_year, st_month, st_day, st_hour)) else 0
+        total_offset = utc_offset + dst_adj
+
+        # Final accurate local time
+        local_epoch = utc_epoch + (total_offset * 3600)
+        local_time = time.localtime(local_epoch)
+        local_hour = local_time[3]
+        local_minute = local_time[4]
+        time_str = f"{local_hour:02d}:{local_minute:02d}"
         
         if weather_timer >= 15:
             temp, condition = fetch_weather(lat=float(config["lat"]), lon=float(config["lon"]))
@@ -224,7 +378,14 @@ while True:
             should_refresh_fully = True
             minute_counter = 0
 
-        display_engine.update_split_display(time_str, temp, condition, config["city"], should_refresh_fully)
+        display_engine.update_split_display(
+            time_str=time_str, 
+            date_str=f"{local_time[1]:02d}/{local_time[2]:02d}/{local_time[0]}",
+            temp=temp, 
+            condition=condition, 
+            city=config["city"], 
+            full_refresh=should_refresh_fully
+        )
         
         for _ in range(600):
             check_web_server(s, is_home_wifi)
@@ -232,25 +393,31 @@ while True:
         weather_timer += 1
         minute_counter += 1
     else:
-        # AP Portal loop - ensure we render the screen only ONCE to avoid destroying E-paper particles
+        # AP Portal loop - render display ONCE
         if not portal_rendered:
             portal_url = f"http://{network_ip}"
             display_engine.fb.fill(1)
-            
-            display_engine.fb.text("[ PORTAL SETUP ACTIVE ]", 30, 40, 0)
-            display_engine.fb.text("1. Connect phone to Wi-Fi Network:", 30, 80, 0)
-            display_engine.fb.text("   SSID: Literary-Clock-Setup", 30, 105, 0)
-            display_engine.fb.text("2. Open browser URL:", 30, 145, 0)
-            display_engine.fb.text(f"   URL: {portal_url}", 30, 170, 0)
-            display_engine.fb.text("3. Submit form to activate device.", 30, 210, 0)
-            
+
+            display_engine.font_writer_roboto.set_textpos(display_engine.fb, 40, 30)
+            display_engine.font_writer_roboto.printstring("[ Literary Clock Setup ]", invert=True)
+            display_engine.font_writer_roboto.set_textpos(display_engine.fb, 80, 30)
+            display_engine.font_writer_roboto.printstring("1. Connect phone to Wi-Fi Network:", invert=True)
+            display_engine.font_writer_roboto.set_textpos(display_engine.fb, 105, 30)
+            display_engine.font_writer_roboto.printstring("   SSID: Literary-Clock-Setup", invert=True)
+            display_engine.font_writer_roboto.set_textpos(display_engine.fb, 145, 30)
+            display_engine.font_writer_roboto.printstring("2. Open browser URL or scan QRCode:", invert=True)
+            display_engine.font_writer_roboto.set_textpos(display_engine.fb, 170, 30)
+            display_engine.font_writer_roboto.printstring(f"   URL: {portal_url}", invert=True)
+            display_engine.font_writer_roboto.set_textpos(display_engine.fb, 210, 30)
+            display_engine.font_writer_roboto.printstring("3. Submit form to activate device.", invert=True)
             display_engine.fb.vline(580, 0, HEIGHT, 0)
-            display_engine.fb.text("SCAN TO CONFIG", 615, 40, 0)
-            
-            display_engine.draw_qr_code(display_engine.fb, text_payload=portal_url, start_x=615, start_y=80, pixel_scale=5)
-            
-            # Flush using official Screen_579 full update methods explicitly
+            display_engine.font_writer_roboto.set_textpos(display_engine.fb, 40, 615)
+            display_engine.font_writer_roboto.printstring("SCAN TO CFG", invert=True)
+            display_engine.draw_qr_code(display_engine.fb, text_payload=portal_url, start_x=615, start_y=80, pixel_scale=6)
             display_engine.display.show(mode=0)
             portal_rendered = True
-            check_web_server(s, is_home_wifi)
-            time.sleep_ms(100)
+
+        # Keep processing HTTP requests continuously in AP mode
+        check_web_server(s, is_home_wifi)
+        time.sleep_ms(50)
+    

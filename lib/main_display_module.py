@@ -3,7 +3,10 @@ from micropython import const
 import CrowPanel as eink
 from uQR import QRCode
 from writer import Writer
-import garamond as myfont
+import literata as myfont
+import literatabold as myfont_bold
+import literataitalic as myfont_italic
+import roboto as robotofont
 
 # Screen configuration
 WIDTH = const(792)
@@ -14,6 +17,9 @@ QUOTES_FILE = "/sd/quotes.db"
 display = eink.Screen_579()
 fb = display
 font_writer = Writer(fb, myfont, verbose=False)
+font_writer_bold = Writer(fb, myfont_bold, verbose=False)
+font_writer_italic = Writer(fb, myfont_italic, verbose=False)
+font_writer_roboto = Writer(fb, robotofont, verbose=False)
 
 def draw_qr_code(fb, text_payload, start_x, start_y, pixel_scale=4):
     """
@@ -57,94 +63,173 @@ def find_quote_on_card(time_str:str) -> tuple[str, str, str, str]:
         pass
     return "", "Time flies like an arrow.", "Unknown Author", f"({time_str})"
 
-def draw_custom_text(text, target_phrase, start_x, start_y, max_width, font_writer) -> None:
-    ''' Break a string into safe chunks to fit the wide 792-pixel screen width, 
-    leveraging the Writer framework's native proportional width detection.
-    '''
-    words = text.split(" ")
-    cursor_x = start_x
-    cursor_y = start_y
-    target_lower = target_phrase.lower().strip()
-    line_height = font_writer.font.height() + 6
+def render_quote_native(quote: str, target_phrase: str, start_x: int, start_y: int, max_x: int) -> None:
+    ''' Render quote using Writer's word-by-word line wrapping. '''
+    font_writer.set_clip(row_clip=False, col_clip=False, wrap=True)
+    font_writer.set_textpos(fb, start_y, start_x)
+    
+    # Extract clean target words into a set for exact word matching
+    target_words = {w.lower().strip(".,;:!?\"'") for w in target_phrase.split()}
+    words = quote.split(" ")
 
-    for word in words:
+    for i, word in enumerate(words):
         clean_word = word.lower().strip(".,;:!?\"'")
-        is_bold = clean_word in target_lower and clean_word != ""
-        
-        # Leverage Peter Hinch's writer stringlen system minus current cursor math
-        # to calculate true pixel dimension metrics dynamically
-        word_width = font_writer.stringlen(word) - font_writer._getstate().text_col
-        
-        if cursor_x + word_width > start_x + max_width:
-            cursor_x = start_x
-            cursor_y += line_height
+        is_target = clean_word in target_words and clean_word != ""
+        writer_to_use = font_writer_bold if is_target else font_writer
 
-        if is_bold:
-            font_writer.set_textpos(fb, cursor_y, cursor_x)
-            font_writer.printstring(word)
-            # Simulated Bold offset layers
-            font_writer.set_textpos(fb, cursor_y + 1, cursor_x)
-            font_writer.printstring(word)
-            font_writer.set_textpos(fb, cursor_y, cursor_x + 1)
-            font_writer.printstring(word)
-        else:
-            font_writer.set_textpos(fb, cursor_y, cursor_x)
-            font_writer.printstring(word)
+        # Check if the word + trailing space will exceed max right boundary
+        word_width = writer_to_use.stringlen(word + " ")
+        curr_row, curr_col = writer_to_use._getstate().text_row, font_writer._getstate().text_col
 
-        cursor_x += (word_width + 6) # Add padding space between layout words
+        # If adding this word exceeds max_x, wrap to the next line manually at start_x
+        if curr_col + word_width > max_x:
+            new_row = curr_row + writer_to_use.font.height()
+            writer_to_use.set_textpos(fb, new_row, start_x)
 
-def draw_weather_icon(condition, x, y) -> None:
-    condition = condition.lower()
-    if "clear" in condition:
-        fb.ellipse(x + 20, y + 20, 10, 10, 0, False)
-        fb.line(x + 20, y, x + 20, y + 6, 0)      
-        fb.line(x + 20, y + 34, x + 20, y + 40, 0) 
-        fb.line(x, y + 20, x + 20, y + 20, 0)      
-        fb.line(x + 34, y + 20, x + 40, y + 20, 0) 
-    elif "cloudy" in condition or "overcast" in condition:
-        fb.fill_rect(x + 5, y + 18, 30, 12, 0)    
-        fb.fill_rect(x + 12, y + 8, 16, 16, 0)    
-        fb.fill_rect(x + 22, y + 12, 10, 10, 0)   
-    elif "rain" in condition or "drizzle" in condition:
-        fb.fill_rect(x + 8, y + 8, 24, 10, 0)     
-        fb.line(x + 10, y + 24, x + 6, y + 32, 0) 
-        fb.line(x + 20, y + 24, x + 16, y + 32, 0)
-        fb.line(x + 30, y + 24, x + 26, y + 32, 0)
-    else:
-        fb.rect(x + 5, y + 5, 30, 30, 0)
+        # Print the word
+        writer_to_use.printstring(word, invert=True)
 
-def update_split_display(time_str, temp_str, condition_str, city_name, force_full_refresh) -> None:
+        # Print trailing space
+        if i < len(words) - 1:
+            writer_to_use.printstring(" ", invert=True)
+
+    # Reset clip settings
+    font_writer.set_clip()
+
+def draw_weather_icon(condition: str, x: int, y: int, size: int) -> None:
+    """
+    Renders scalable vector weather icons (Sun, Clouds, Rain, Fog, Snow, Storm)
+    inside a bounding box at (x, y) with width/height equal to size.
+    """
+    c = condition.lower()
+    s = size / 100.0  # Scale relative to a 100x100 relative canvas
+
+    def draw_sun(cx, cy, r):
+        fb.ellipse(int(cx), int(cy), int(r), int(r), 0, True)
+        r_in = int(r + 5 * s)
+        r_out = int(r + 14 * s)
+        # Cardinal rays
+        fb.line(int(cx - r_out), int(cy), int(cx - r_in), int(cy), 0)
+        fb.line(int(cx + r_in), int(cy), int(cx + r_out), int(cy), 0)
+        fb.line(int(cx), int(cy - r_out), int(cx), int(cy - r_in), 0)
+        fb.line(int(cx), int(cy + r_in), int(cx), int(cy + r_out), 0)
+        # Diagonal rays
+        d_in = int(r_in * 0.707)
+        d_out = int(r_out * 0.707)
+        fb.line(int(cx - d_out), int(cy - d_out), int(cx - d_in), int(cy - d_in), 0)
+        fb.line(int(cx + d_in), int(cy - d_in), int(cx + d_out), int(cy - d_out), 0)
+        fb.line(int(cx - d_out), int(cy + d_out), int(cx - d_in), int(cy + d_in), 0)
+        fb.line(int(cx + d_in), int(cy + d_out), int(cx + d_out), int(cy + d_in), 0)
+
+    def draw_cloud(cx, cy, width):
+        cw = width / 60.0
+        # Overlapping cloud bubbles + filled base
+        fb.ellipse(int(cx - 15 * cw), int(cy + 2 * cw), int(12 * cw), int(12 * cw), 0, True)
+        fb.ellipse(int(cx), int(cy - 8 * cw), int(18 * cw), int(18 * cw), 0, True)
+        fb.ellipse(int(cx + 18 * cw), int(cy + 4 * cw), int(13 * cw), int(13 * cw), 0, True)
+        fb.fill_rect(int(cx - 22 * cw), int(cy + 2 * cw), int(52 * cw), int(16 * cw), 0)
+
+    # --- Icon Routing ---
+    if "clear" in c and "mainly" not in c and "partly" not in c:
+        draw_sun(x + 50 * s, y + 50 * s, 22 * s)
+
+    elif "partly" in c or "mainly" in c:
+        # Sun behind cloud
+        draw_sun(x + 35 * s, y + 35 * s, 16 * s)
+        # White background mask behind cloud
+        fb.ellipse(int(x + 55 * s), int(y + 60 * s - 6 * 0.8), int(20 * 0.8), int(20 * 0.8), 1, True)
+        fb.fill_rect(int(x + 55 * s - 24 * 0.8), int(y + 60 * s), int(56 * 0.8), int(18 * 0.8), 1)
+        draw_cloud(x + 55 * s, y + 60 * s, 48 * s)
+
+    elif "rain" in c or "drizzle" in c or "shower" in c:
+        draw_cloud(x + 50 * s, y + 38 * s, 55 * s)
+        # Angled rain drops
+        for rx in (x + 30 * s, x + 44 * s, x + 58 * s, x + 70 * s):
+            fb.line(int(rx), int(y + 62 * s), int(rx - 6 * s), int(y + 78 * s), 0)
+            fb.line(int(rx + 1), int(y + 62 * s), int(rx - 5 * s), int(y + 78 * s), 0)
+
+    elif "fog" in c or "mist" in c:
+        for offset_y in (25 * s, 40 * s, 55 * s, 70 * s):
+            fb.fill_rect(int(x + 20 * s), int(y + offset_y), int(60 * s), int(4 * s), 0)
+
+    elif "snow" in c:
+        draw_cloud(x + 50 * s, y + 38 * s, 55 * s)
+        for sx, sy in ((x + 35 * s, y + 68 * s), (x + 50 * s, y + 75 * s), (x + 65 * s, y + 68 * s)):
+            fb.ellipse(int(sx), int(sy), int(3 * s), int(3 * s), 0, True)
+
+    elif "thunder" in c or "storm" in c:
+        draw_cloud(x + 50 * s, y + 35 * s, 55 * s)
+        pts = [(x + 52 * s, y + 55 * s), (x + 42 * s, y + 70 * s), (x + 48 * s, y + 70 * s), (x + 40 * s, y + 88 * s)]
+        for i in range(len(pts) - 1):
+            fb.line(int(pts[i][0]), int(pts[i][1]), int(pts[i+1][0]), int(pts[i+1][1]), 0)
+
+    else:  # "cloudy", "overcast", fallback
+        draw_cloud(x + 50 * s, y + 48 * s, 65 * s)
+
+def update_split_display(
+        time_str, 
+        date_str,
+        temp, 
+        condition, 
+        city, 
+        full_refresh=False
+        ) -> None:
     target_phrase, quote, book, author = find_quote_on_card(time_str)
     fb.fill(1) 
     
     # --- WEATHER SIDEBAR ---
-    font_writer.set_textpos(fb, 20, 15)
-    font_writer.printstring(time_str)
+    sidebar_width = 192
+    padding = 20
+
+    if hasattr(font_writer_roboto, "stringlen"):
+        text_width = font_writer_roboto.stringlen(date_str + "  " + time_str)
+    else:
+        # Fallback for standard 8px-wide fixed framebuffer fonts
+        text_width = len(date_str + "  " + time_str) * 8
+        
+    time_x = (sidebar_width - text_width) // 2
+    time_y = 20  # Vertical offset top margin
     
-    font_writer.set_textpos(fb, 50, 15)
-    font_writer.printstring(city_name[:15])
+    # Render centered time string
+    font_writer_roboto.set_textpos(fb, time_y, time_x)
+    font_writer_roboto.printstring(date_str + " " + time_str, invert=True)
+
+    if hasattr(font_writer_roboto, "stringlen"):
+        city_width = font_writer_roboto.stringlen(city[:15])
+    else:
+        # Fallback for standard 8px-wide fixed framebuffer fonts
+        city_width = len(city[:15]) * 8
+
+    city_x = (sidebar_width - city_width) // 2
+    font_writer_roboto.set_textpos(fb, 50, city_x)
+    font_writer_roboto.printstring(city[:15], invert=True)
+
+    icon_size = (sidebar_width - (padding * 2)) - 24  # Yields 172px width automatically
+    icon_x = int((sidebar_width - icon_size) / 2)
+    icon_y = 80
+    draw_weather_icon(condition, x=icon_x, y=icon_y, size=icon_size)    
+
+    font_writer_roboto.set_textpos(fb, 220, 15)
+    font_writer_roboto.printstring(f"Temp: {temp}", invert=True)
+    font_writer_roboto.set_textpos(fb, 240, 15)
+    font_writer_roboto.printstring(f"Cond: {condition[:18]}", invert=True)
     
-    draw_weather_icon(condition_str, x=20, y=80)
-    
-    font_writer.set_textpos(fb, 140, 20)
-    font_writer.printstring(f"Temp: {temp_str}")
-    
-    font_writer.set_textpos(fb, 160, 20)
-    font_writer.printstring(f"Cond: {condition_str[:18]}")
-    
-    fb.vline(192, 0, HEIGHT, 0)
+    fb.vline(sidebar_width, 0, HEIGHT, 0)
     
     # --- QUOTE CANVAS ---
-    draw_custom_text(quote, target_phrase, start_x=212, start_y=30, max_width=560, font_writer=font_writer)
+    render_quote_native(quote, target_phrase, start_x=212, start_y=14, max_x=WIDTH - 20)
     
     footer_text = f"--- {book} ({author})"
-    target_row = HEIGHT - 40
-    # Safe fallback positioning logic
-    target_col = WIDTH - 350
-    font_writer.set_textpos(fb, target_row, target_col)
-    font_writer.printstring(footer_text)
+    right_margin = 20
+    bottom_margin = 15
+    footer_width = font_writer_italic.stringlen(footer_text)
+    target_col = WIDTH - footer_width - right_margin
+    target_row = HEIGHT - font_writer_italic.font.height() - bottom_margin
     
-    if force_full_refresh:
+    font_writer_italic.set_textpos(fb, target_row, target_col)
+    font_writer_italic.printstring(footer_text, invert=True)
+    
+    if full_refresh:
         display.show(mode=0) # SCREEN_UPDATE_FULL
     else:
-        display.show(mode=1) # SCREEN_UPDATE_FAST (Mode 1 gives optimized fast diffing updates)
+        display.show(mode=2) # SCREEN_UPDATE_FAST

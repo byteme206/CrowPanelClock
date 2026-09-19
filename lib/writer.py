@@ -52,13 +52,11 @@ class Writer:
             Writer.state[devid] = DisplayState()
         s = Writer.state[devid]  # Current state
         if row is not None:
-            if row < 0 or row >= device.height:
-                raise ValueError("row is out of range")
-            s.text_row = row
+            # Clamp row within [0, height - 1]
+            s.text_row = max(0, min(row, device.height - 1))
         if col is not None:
-            if col < 0 or col >= device.width:
-                raise ValueError("col is out of range")
-            s.text_col = col
+            # Clamp col within [0, width - 1]
+            s.text_col = max(0, min(col, device.width - 1))
         return s.text_row, s.text_col
 
     def __init__(self, device, font, verbose=True):
