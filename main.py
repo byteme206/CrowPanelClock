@@ -2,6 +2,7 @@ import gc
 import network
 import time
 import ntptime
+import random
 import socket
 import json
 from machine import RTC, reset
@@ -13,6 +14,9 @@ WIDTH = 792
 HEIGHT = 272
 CONFIG_FILE = "/sd/config.json"
 ZIPS_FILE = "/sd/zips.csv"
+QUOTES_FILE = "/sd/quotes.db"
+SPLASH_IMG_FILE = "/sd/boot_splash.bin"
+
 
 def load_config() -> dict:
     try:
@@ -327,8 +331,109 @@ def is_dst(year, month, day, hour) -> bool:
     
     return False
 
+def load_quotes_db(file_path):
+    quotes_map = {}
+
+    try:
+        with open(file_path, "r") as file:
+            for line in file:
+                line = line.strip()
+                if not line:
+                    continue
+
+                parts = line.split("|")
+                # Fix: Check for 5 required fields instead of 6
+                if len(parts) < 5:
+                    continue
+
+                raw_time, raw_phrase, raw_quote, raw_book, raw_author = (
+                    parts[0],
+                    parts[1],
+                    parts[2],
+                    parts[3],
+                    parts[4],
+                )
+
+                quote = (
+                    raw_quote.strip()
+                    .replace("’", "'")
+                    .replace("“", '"')
+                    .replace("”", '"')
+                )
+                book = raw_book.strip()
+                author = raw_author.strip()
+                phrase = raw_phrase.strip()
+
+                time_parts = raw_time.strip().split(":")
+                if len(time_parts) == 2 and time_parts[0].isdigit():
+                    h = int(time_parts[0])
+                    m = int(time_parts[1])
+                    formatted_time = "{:02d}:{:02d}".format(h, m)
+                else:
+                    continue
+
+                if formatted_time not in quotes_map:
+                    quotes_map[formatted_time] = []
+
+                quotes_map[formatted_time].append(
+                    {
+                        "quote": quote,
+                        "author": author,
+                        "book": book,
+                        "target_phrase": phrase,
+                    }
+                )
+    except Exception as e:
+        print("Error loading quotes database:", e)
+
+    return quotes_map
+
+
+def find_quote(time_str: str, quotes_map: dict) -> dict:
+    """Searches for a matching quote, stepping backward up to 24 hours if the timestamp is missing."""
+    if not quotes_map:
+        return {
+            "target_phrase": "",
+            "quote": "Time flies like an arrow.",
+            "author": "Unknown Author",
+            "book": f"({time_str})",
+        }
+
+    try:
+        h, m = map(int, time_str.split(":"))
+        total_minutes = h * 60 + m
+
+        # Decrement backward to find closest matching quote
+        for offset in range(1440):
+            current_minutes = (total_minutes - offset) % 1440
+            curr_h = current_minutes // 60
+            curr_m = current_minutes % 60
+            key = "{:02d}:{:02d}".format(curr_h, curr_m)
+
+            if key in quotes_map:
+                quote_entry = random.choice(quotes_map[key])
+                return {
+                    "target_phrase": quote_entry.get("target_phrase", ""),
+                    "quote": quote_entry.get(
+                        "quote", "Time flies like an arrow."
+                    ),
+                    "author": quote_entry.get("author", "Unknown Author"),
+                    "book": quote_entry.get("book", "Unknown Book"),
+                }
+    except Exception as e:
+        print("Quote lookup error:", e)
+
+    return {
+        "target_phrase": "",
+        "quote": "Time flies like an arrow.",
+        "author": "Unknown Author",
+        "book": f"({time_str})",
+    }
+
 
 # --- Initialization ---
+display_engine.show_boot_splash(image_path=SPLASH_IMG_FILE, width=WIDTH, height=HEIGHT)
+time.sleep(3)
 config = load_config()
 rtc = RTC()
 is_home_wifi, network_ip = init_network_manager(config["ssid"], config["password"])
@@ -338,6 +443,7 @@ temp, condition = "N/A", "Offline"
 weather_timer = 15
 minute_counter = 60
 portal_rendered = False
+quotes_map = load_quotes_db(QUOTES_FILE)
 
 while True:
     if is_home_wifi:
@@ -378,9 +484,12 @@ while True:
             should_refresh_fully = True
             minute_counter = 0
 
+        quote_details = find_quote(time_str, quotes_map)
+
         display_engine.update_split_display(
             time_str=time_str, 
-            date_str=f"{local_time[1]:02d}/{local_time[2]:02d}/{local_time[0]}",
+            date_str=f"{local_time[1]:02d}/{local_time[2]:02d}/{local_time[0]}", 
+            quote_details=quote_details,
             temp=temp, 
             condition=condition, 
             city=config["city"], 
