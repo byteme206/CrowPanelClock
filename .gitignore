@@ -43,6 +43,9 @@ System Volume Information/
 !.vscode/launch.json
 .history/
 *.code-workspace
+typings*
+.micropico
+*.code-workspace
 
 # JetBrains (IntelliJ, WebStorm, PyCharm, etc.)
 .idea/

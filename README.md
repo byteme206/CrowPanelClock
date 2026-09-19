@@ -36,8 +36,20 @@ Once an hour, the clock face will flash momentarily as the clock performs a full
 |`uqr.py`|Helper class for generating a QR code from a URL.|Me|
 |`CrowPanel.py`|Custom driver for the CrowPanel_579 display that leverages the dual frame buffer chips.|https://github.com/omiq/crowpanel/blob/main/CrowPanel.py|
 
-|TF Card File|What it Does|
+|SD Card File|What it Does|
 |---|---|
-|`config.json`|Holds the wifi and weather settings for the device.|
+|`config.json`|Holds the wifi and location settings for the device.|
 |`quotes.db`|Holds the database of literary quotes.|
-|`zips.csv`|Holds the zip code to lat/long mappings for the weather function.|
+|`zips.csv`|Holds the postal code to lat/long mappings for the weather and DST functions. The example provided is a limited subset of postal codes to save on storage space. Modify as needed for your use case.|
+
+### Postal Code Database Layout
+This is a CSV file that maps a postal code to location details, used for easier setup.
+
+|Field #|Label|Purpose|
+|---|---|---|
+|1|Postal Code|Used as a lookup key for quickly configuring location data.|
+|2|Latitude|Used for weather lookup.|
+|3|Longitude|Used for weather lookup.|
+|4|Locale Name|Name of the associated location.|
+|5|UTC Offset|The timezone offset from UTC for this locale.|
+|6|DST Observed|A boolean indicating whether or not this locale observes US Daylight Saving Time.|
