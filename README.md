@@ -46,3 +46,14 @@ This is a CSV file that maps a postal code to location details, used for easier 
 |4|Locale Name|Name of the associated location.|
 |5|UTC Offset|The timezone offset from UTC for this locale.|
 |6|DST Observed|A boolean indicating whether or not this locale observes US Daylight Saving Time.|
+
+### Quotes DB details
+This is a pipe-separated file that maps times of day to public domain literary quotations.
+
+|Field #|Label|Purpose|
+|---|---|---|
+|1|Time String|HH:MM representation of a time of day in 24-hour notation. Used as a database lookup key.|
+|2|Text to Emphasize|The text within the quote that should be emphasized, representing the time of day in prose.|
+|3|Quotation|The quotation from a public domain work of literature.|
+|4|Book|The name of the book from which the quotation was copied.|
+|5|Author|The name of the author of the book.|
